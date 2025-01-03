@@ -1,0 +1,227 @@
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(nflreadr)
+library(gt)
+```
+
+```{r}
+OL <-c("T", "G", "C")
+```
+
+```{r}
+mid <- function (c1, c2){
+  (c2+c1)/2
+}
+```
+
+```{r}
+nshould <- function(y, LTY, LTRS, LGLS, LGRS, CLS, CRS, RGLS, RGRS, RTLS, RTY){
+  gapYs <- c(LTRS, LGLS, LGRS, CLS, CRS, RGLS, RGRS, RTLS)
+  for (i in 1:8){
+    gapYs[i] = abs(y - gapYs[i])
+  }
+  proxim <- min(gapYs) 
+  if (proxim == gapYs[1]){
+    return(2)
+  } else if (proxim == gapYs[2]){
+    return(3)
+  } else if (proxim == gapYs[3]){
+    return(4)
+  } else if (proxim == gapYs[4]){
+    return(5)
+  } else if (proxim == gapYs[5]){
+    return(6)
+  } else if (proxim == gapYs[6]){
+    return(7)
+  } else if (proxim == gapYs[7]){
+    return(8)
+  }
+}
+```
+
+```{r}
+get_min <- function(D2, D3, D4, D5, D6, D7, D8, D9){
+  dists = c(D2, D3, D4, D5, D6, D7, D8, D9)
+  return(min(dists))
+}
+```
+
+
+
+```{r}
+tracking_OLC <- read_csv("tracking_OLC.csv")
+```
+
+```{r}
+tracking_prepressure <- tracking_OLC |>
+  mutate(release_frame = ifelse(event == "pass_forward", frameId, NA)) |>
+  group_by(gamePlay) |>
+  arrange(release_frame) |>
+  mutate(release_frame = ifelse(is.na(release_frame[1]), 1000, release_frame)) |>
+  fill(release_frame, .direction = "down") |>
+  filter(frameId <= release_frame) |>
+  ungroup()
+```
+
+```{r}
+tracking_prepressure <- tracking_prepressure |>
+  subset(select = -c(...1, ...2, ...3, event, release_frame))
+```
+
+
+```{r}
+write_csv(tracking_prepressure, "tracking_prerelease.csv")
+```
+
+```{r}
+tracking_prepressure <- read_csv("tracking_prerelease.csv")
+```
+
+
+```{r}
+tracking_dynamicgaps <- tracking_prepressure |>
+  group_by(gamePlay, frameId) |>
+  mutate(temp_y = ifelse(position %in% OL, y, 150)) |>
+  arrange(temp_y) |>
+  mutate(is_RT = ifelse(temp_y == temp_y[1], 1, 0),
+         is_RG = ifelse(temp_y == temp_y[2], 1, 0),
+         is_center = ifelse(temp_y == temp_y[3], 1, 0),
+         is_LG = ifelse(temp_y == temp_y[4], 1, 0),
+         is_LT = ifelse(temp_y == temp_y[5], 1, 0)) |>
+  mutate(CX = ifelse(is_center == 1, x, NA),
+         CY = ifelse(is_center == 1, y, NA)) |>
+  arrange(CX) |>
+  fill(CX, .direction = "down") |>
+  fill(CY, .direction = "down") |>
+   mutate(LTX = ifelse(is_LT == 1, x, NA),
+         LTY = ifelse(is_LT == 1, y, NA)) |>
+  arrange(LTX) |>
+  fill(LTX, .direction = "down") |>
+  fill(LTY, .direction = "down") |>
+  mutate(LGX = ifelse(is_LG == 1, x, NA),
+         LGY = ifelse(is_LG == 1, y, NA)) |>
+  arrange(LGX) |>
+  fill(LGX, .direction = "down") |>
+  fill(LGY, .direction = "down") |>
+  mutate(RGX = ifelse(is_RG == 1, x, NA),
+         RGY = ifelse(is_RG == 1, y, NA)) |>
+  arrange(RGX) |>
+  fill(RGX, .direction = "down") |>
+  fill(RGY, .direction = "down") |>
+  mutate(RTX = ifelse(is_RT == 1, x, NA),
+         RTY = ifelse(is_RT == 1, y, NA)) |>
+  arrange(RTX) |>
+  fill(RTX, .direction = "down") |>
+  fill(RTY, .direction = "down") |>
+  ungroup()
+  
+  
+```
+
+
+```{r}
+sum <- function(x, y){
+  if (y < 3){
+    return(x - y)
+  } else {
+    return(x+y)
+  }
+}
+```
+
+
+```{r}
+tracking_shoulders <- tracking_dynamicgaps |>
+  mutate(RAmx = mid(CX, RGX), RAmy = mid(CY, RGY),
+         RBmx = mid(RGX, RTX), RBmy = mid(RGY, RTY),
+         LAmx = mid(CX, LGX), LAmy = mid(CY, LGY),
+         LBmx = mid(LGX, LTX), LBmy = mid(LGY, LTY)) |>
+  mutate(CRS = mid(CY, RAmy), CLS = mid(CY, LAmy),
+         RGLS = mid(RGY, RAmy), RGRS = mid(RGY, RBmy),
+         RTLS = mid(RTY, RBmy),
+         LGRS = mid(LGY, LAmy), LGLS = mid(LGY, RBmy),
+         LTRS = mid(LTY, LBmy))
+```
+
+
+```{r}
+tracking_gaps <- tracking_shoulders |>
+  mutate(D2 = abs(y-LTRS), D3 = abs(y-LGLS), D4 = abs(y-LGRS), D5 = abs(y-CLS),
+         D6 = abs(y - CRS), D7 = abs(y-RGLS), D8 = abs(y - RGRS), D9 = abs(y-RTLS),
+         proxim = pmin(D2, D3, D4, D5, D6, D7, D8, D9)) |>
+  mutate(nshould = ifelse(wasPassRusher == 1 & proxim == D2, 2, NA)) |>
+  mutate(nshould = ifelse(wasPassRusher == 1 & proxim == D3, 3, nshould)) |>
+  mutate(nshould = ifelse(wasPassRusher == 1 & proxim == D4, 4, nshould)) |>
+  mutate(nshould = ifelse(wasPassRusher == 1 & proxim == D5, 5, nshould)) |>
+  mutate(nshould = ifelse(wasPassRusher == 1 & proxim == D6, 6, nshould)) |>
+  mutate(nshould = ifelse(wasPassRusher == 1 & proxim == D7, 7, nshould)) |>
+  mutate(nshould = ifelse(wasPassRusher == 1 & proxim == D8, 8, nshould)) |>
+  mutate(nshould = ifelse(wasPassRusher == 1 & proxim == D9, 9, nshould)) |>
+  mutate(nshould = ifelse(wasPassRusher == 1 & y > LTY, 1, nshould)) |>
+  mutate(nshould = ifelse(wasPassRusher == 1 & y < RTY, 10, nshould)) |>
+  group_by(gamePlay, frameId) |>
+  mutate(gap1 = ifelse(nshould == 1, 1, NA),
+         gap2 = ifelse(nshould == 2, 1, NA),
+         gap3 = ifelse(nshould == 3, 1, NA),
+         gap4 = ifelse(nshould == 4, 1, NA),
+         gap5 = ifelse(nshould == 5, 1, NA),
+         gap6 = ifelse(nshould == 6, 1, NA),
+         gap7 = ifelse(nshould == 7, 1, NA),
+         gap8 = ifelse(nshould == 8, 1, NA),
+         gap9 = ifelse(nshould == 9, 1, NA),
+         gap10 = ifelse(nshould == 10, 1, NA)) |>
+  ungroup()
+    
+```
+
+
+Checkpoint if necessary
+
+```{r}
+write.csv(tracking_gaps, "tracking_gaps.csv")
+```
+
+```{r}
+tracking_shoulders <- read_csv("tracking_gaps.csv")
+```
+
+
+```{r}
+tracking_shoulders <- tracking_shoulders |>
+  subset(select = -c(...1, atsnap_x, atsnap_y, temp_y, ballspot_x, ballspot_y,
+                     LAmx, LAmy, LBmx, LBmy, RAmx, RAmy, RBmx, RBmy))
+```
+
+
+```{r}
+tracking_shoulders <- tracking_shoulders |>
+  group_by(gamePlay, frameId) |>
+  arrange(gap1) |>
+  mutate(gap1 = ifelse(is.na(gap1[1]), 0, 1)) |>
+  arrange(gap2) |>
+  mutate(gap2 = ifelse(is.na(gap2[1]), 0, 1)) |>
+  arrange(gap3) |>
+  mutate(gap3 = ifelse(is.na(gap3[1]), 0, 1)) |>
+  arrange(gap4) |>
+  mutate(gap4 = ifelse(is.na(gap4[1]), 0, 1)) |>
+  arrange(gap5) |>
+  mutate(gap5 = ifelse(is.na(gap5[1]), 0, 1)) |>
+  arrange(gap6) |>
+  mutate(gap6 = ifelse(is.na(gap6[1]), 0, 1)) |>
+  arrange(gap7) |>
+  mutate(gap7 = ifelse(is.na(gap7[1]), 0, 1)) |>
+  arrange(gap8) |>
+  mutate(gap8 = ifelse(is.na(gap8[1]), 0, 1)) |>
+  arrange(gap9) |>
+  mutate(gap9 = ifelse(is.na(gap9[1]), 0, 1)) |>
+  arrange(gap10) |>
+  mutate(gap10 = ifelse(is.na(gap10[1]), 0, 1)) |>
+  ungroup()
+```
+
+
+```{r}
+write_csv(tracking_shoulders, "tracking_shoulders.csv")
+```
+

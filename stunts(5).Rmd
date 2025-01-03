@@ -1,0 +1,94 @@
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(nflreadr)
+library(nflfastR)
+library(gt)
+library(gtExtras)
+library(nflplotR)
+```
+
+```{r}
+tracking <- read_csv("tracking_2wg.csv")
+```
+```{r}
+tracking <- tracking |>
+  subset(select = -c(LTX, LTY, LGX, LGY, CX, CY, RGX, RGY, RTX, RTY,
+                     CRS, CLS, LTRS, LGLS, LGRS, RGLS, RGRS, RTLS,
+                     gap1, gap2, gap3, gap4, gap5, gap6, gap7, gap8, gap9, gap10,
+                     dist_OR, dist_OL, help_1, help_2, help_3, help_4,
+                     proxim, can_help, num_helpers))
+```
+
+```{r}
+tracking <- tracking |>
+  subset(select = -c(D2, D3, D4, D5, D6, D7, D8, D9,
+            min_OR, min_OL, LOS))
+```
+
+
+
+
+```{r}
+tracking <- tracking |>
+  group_by(gamePlay, frameId) |>
+  mutate(contain_kept = ifelse(frameType == "AFTER_SNAP" & position == "QB" & outside_RT < 0 & outside_LT < 0, 1, 0)) |>
+  mutate(contain_kept = ifelse(position == "QB" & frameType == "AFTER_SNAP", contain_kept, NA)) |>
+  arrange(contain_kept) |>
+  fill(contain_kept, .direction = "down") |>
+  ungroup() |>
+  group_by(gamePlay, contain_kept) |>
+  arrange(frameId) |>
+  mutate(contain_break_frame = ifelse(contain_kept == 0, frameId[1], NA)) |>
+  ungroup() |>
+  group_by(gamePlay) |> 
+  arrange(contain_break_frame) |>
+  fill(contain_break_frame, .direction = "down") |>
+  ungroup() |>
+  mutate(contain_break_frame = ifelse(is.na(contain_break_frame), 1000, contain_break_frame))
+  
+  
+```
+
+
+```{r}
+tracking_stunts <- tracking |> 
+  group_by(gamePlay, nflId) |>
+  mutate(start_gap = ifelse(frameType == "SNAP", nshould, NA)) |>
+  arrange(start_gap) |>
+  fill(start_gap, .direction = "down") |>
+  mutate(had_stunt = ifelse(abs(nshould - start_gap) > 2 & wasPassRusher & has_2wg != 1
+                            & frameType != "BEFORE_SNAP" & frameId < contain_break_frame, 1, 0)) |>
+  ungroup()
+  
+```
+
+```{r}
+tracking_stunts |>
+  filter(had_stunt == 1) 
+```
+
+
+```{r}
+tracking_stunts |> 
+  group_by(gamePlay, nflId) |>
+  filter(wasPassRusher == 1, frameType != "BEFORE_SNAP", frameId < contain_break_frame) |>
+  mutate(start_gap = ifelse(frameType == "SNAP", nshould, NA)) |>
+  arrange(start_gap) |>
+  fill(start_gap, .direction = "down") |>
+  mutate(had_stunt = ifelse(abs(nshould - start_gap) > 2 & wasPassRusher , 1, 0)) |>
+  ungroup() |>
+  group_by(gamePlay) |> 
+  arrange(desc(had_stunt)) |>
+  summarize(was_stunt = had_stunt[1], team = defTeam[1], gameId = gameId[1], playId = playId[1]) |>
+  mutate(rep = 1) |>
+  group_by(team) |>
+  summarize(reps = sum(rep), stunts = sum(was_stunt)) |>
+  mutate(stunt_rate = stunts/reps) |>
+  arrange(desc(stunt_rate))
+```
+
+```{r}
+write_csv(stunt_data, "stunt_data.csv")
+```
+

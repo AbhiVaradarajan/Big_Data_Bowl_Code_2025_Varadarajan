@@ -1,0 +1,139 @@
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(nflreadr)
+library(gt)
+```
+
+```{r}
+tracking <- read_csv("filtered_tracking.csv")
+player_play <- read_csv("filtered_player_play.csv")
+plays <- read_csv("filtered_plays.csv")
+```
+```{r}
+OL <- c("T", "G", "C")
+```
+
+```{r}
+dist <- function(x1, x2, y1, y2){
+  sqrt(((x1-x2)^2)+((y1-y2)^2))
+}
+```
+
+```{r}
+tracking_muted <- tracking |>
+  mutate(center_x = ifelse(is_center == 1 & frameType == "SNAP", x, NA),
+         center_y = ifelse(is_center == 1 & frameType == "SNAP", y, NA)) |>
+  group_by(gamePlay) |>
+  arrange(center_x) |>
+  fill(center_x, .direction = "down") |>
+  fill(center_y, .direction = "down") |>
+  ungroup() |>
+  group_by(gamePlay, nflId) |>
+  mutate(is_right = ifelse(frameType == "SNAP", y < center_y, NA),
+         is_left = ifelse(frameType == "SNAP", y > center_y, NA)) |>
+  arrange(is_right) |>
+  fill(is_right, .direction = "down") |>
+  fill(is_left, .direction = "down") |>
+  ungroup()
+  
+```
+
+
+```{r}
+tracking_agaps <- tracking_muted |>
+  group_by(gamePlay, nflId) |>
+  mutate(atsnap_x = ifelse(frameId == test_frame, x, NA),
+         atsnap_y = ifelse(frameId == test_frame, y, NA)) |>
+  arrange(atsnap_x) |>
+  fill(atsnap_x, .direction = "down") |>
+  fill(atsnap_y, .direction = "down") |>
+  mutate(dist_OR = ifelse(is_right & position %in% OL, dist(atsnap_x, center_x, atsnap_y, center_y), 150),
+         dist_OL = ifelse(is_left & position %in% OL, dist(atsnap_x, center_x, atsnap_y, center_y), 150)) |>
+  ungroup() |>
+  group_by(gamePlay) |>
+  mutate(min_OR = min(dist_OR), min_OL = min(dist_OL)) |>
+  mutate(is_RG = ifelse(dist_OR == min_OR & is_right, 1, 0),
+         is_LG = ifelse(dist_OL == min_OL & is_left, 1, 0)) |>
+  ungroup()
+```
+
+
+
+```{r}
+tracking_bgaps <- tracking_agaps |> 
+  group_by(gamePlay, nflId) |>
+  mutate(is_right = ifelse(is_RG == 1, FALSE, is_right),
+         is_left = ifelse(is_LG == 1, FALSE, is_left)) |>
+  mutate(dist_OR = ifelse(is_right & position %in% OL, dist(atsnap_x, center_x, atsnap_y, center_y), 150),
+         dist_OL = ifelse(is_left & position %in% OL, dist(atsnap_x, center_x, atsnap_y, center_y), 150)) |>
+  ungroup() |>
+  group_by(gamePlay) |>
+  mutate(min_OR = min(dist_OR), min_OL = min(dist_OL)) |>
+  mutate(is_RT = ifelse(dist_OR == min_OR & is_right, 1, 0),
+         is_LT = ifelse(dist_OL == min_OL & is_left, 1, 0)) |>
+  ungroup()
+```
+
+```{r}
+tracking_bgaps <- tracking_bgaps |>
+  subset(select = -c(...1, atsnap_x, atsnap_y, time, jerseyNumber, playDirection,
+            s, a, dis, dist_to_LOS, dist_to_ball_y, snap_frame, test_frame,
+            pyth_dist_to_ball, closest_to_ball, center_x, center_y,
+            is_right, is_left, dist_OR, dist_OL, min_OR, min_OL))
+```
+
+Save Point if necessary
+
+```{r}
+write.csv(tracking_bgaps, "tracking_bgaps.csv")
+```
+
+```{r}
+tracking_gapped <- read_csv("tracking_bgaps.csv")
+```
+
+
+
+```{r}
+tracking_OLC <- tracking_gapped |>
+  group_by(gamePlay, frameId) |>
+  mutate(RGX = ifelse(is_RG, x, NA), RGY = ifelse(is_RG, y, NA)) |>
+  arrange(RGX) |>
+  fill(RGX, .direction = "down") |>
+  fill(RGY, .direction = "down") |>
+  ungroup() |>
+  mutate(LGX = ifelse(is_LG, x, NA), LGY = ifelse(is_LG, y, NA)) |>
+  group_by(gamePlay, frameId) |>
+  arrange(LGX) |>
+  fill(LGX, .direction = "down") |>
+  fill(LGY, .direction = "down") |>
+  ungroup() |>
+  mutate(LTX = ifelse(is_LT, x, NA), LTY = ifelse(is_LT, y, NA)) |>
+  group_by(gamePlay, frameId) |>
+  arrange(LTX) |>
+  fill(LTX, .direction = "down") |>
+  fill(LTY, .direction = "down") |>
+  ungroup() |>
+  mutate(RTX = ifelse(is_RT, x, NA), RTY = ifelse(is_RT, y, NA)) |>
+  group_by(gamePlay, frameId) |>
+  arrange(RTX) |>
+  fill(RTX, .direction = "down") |>
+  fill(RTY, .direction = "down") |>
+  ungroup() |>
+  mutate(CX = ifelse(is_center, x, NA), CY = ifelse(is_center, y, NA)) |>
+  group_by(gamePlay, frameId) |>
+  arrange(CX) |>
+  fill(CX, .direction = "down") |>
+  fill(CY, .direction = "down") |>
+  ungroup()
+  
+```
+
+
+```{r}
+write.csv(tracking_OLC, "tracking_OLC.csv")
+```
+
+
+

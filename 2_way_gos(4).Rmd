@@ -1,0 +1,232 @@
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(nflreadr)
+library(gt)
+```
+
+```{r}
+tracking_shoulders <- read_csv("tracking_shoulders.csv")
+```
+
+```{r}
+helpers <- c("RB", "FB", "TE")
+```
+
+
+```{r}
+tracking_shoulders <- tracking_shoulders |>
+  select(-c(time))
+```
+
+```{r}
+tracking_helpers <- tracking_shoulders |>
+  group_by(gamePlay) |>
+  mutate(LOS = ifelse(club == "football" & frameId == test_frame, x, NA)) |>
+  arrange(LOS)|>
+  fill(LOS, .direction = "down") |>
+  mutate(is_right = ifelse(y < CY, TRUE, FALSE),
+         is_left = ifelse(y > CY, TRUE, FALSE), 
+         behind_LOS = ifelse(x < LOS, 1, 0),
+         outside_RT = RTY-y,
+         outside_LT = y-LTY) |>
+  mutate(can_help = ifelse(position %in% helpers & behind_LOS == 1, 1, 0)) |>
+  mutate(can_help = ifelse(can_help == 1 & (outside_RT > 1 | outside_LT > 1), 0, can_help)) |>
+  mutate(nshould = ifelse(can_help == 1 & proxim == D2, 2, nshould)) |>
+  mutate(nshould = ifelse(can_help == 1 & proxim == D3, 3, nshould)) |>
+  mutate(nshould = ifelse(can_help == 1 & proxim == D4, 4, nshould)) |>
+  mutate(nshould = ifelse(can_help == 1 & proxim == D5, 5, nshould)) |>
+  mutate(nshould = ifelse(can_help == 1 & proxim == D6, 6, nshould)) |>
+  mutate(nshould = ifelse(can_help == 1 & proxim == D7, 7, nshould)) |>
+  mutate(nshould = ifelse(can_help == 1 & proxim == D8, 8, nshould)) |>
+  mutate(nshould = ifelse(can_help == 1 & proxim == D9, 9, nshould)) |>
+  mutate(nshould = ifelse(can_help == 1 & y > LTY, 1, nshould)) |>
+  mutate(nshould = ifelse(can_help == 1 & y < RTY, 10, nshould)) |>
+  ungroup() |>
+  group_by(gamePlay, frameId) |>
+  mutate(num_helpers = sum(can_help)) |>
+  ungroup()
+```
+
+```{r}
+write_csv(tracking_helpers, "tracking_helpers.csv")
+```
+
+
+```{r}
+tracking_helpers <- read_csv("tracking_helpers.csv")
+```
+
+```{r}
+tracking_help_gaps <-tracking_helpers |>
+  group_by(gamePlay, frameId) |>
+  mutate(hshould = ifelse(can_help == 1, nshould, NA)) |>
+  arrange(hshould) |>
+  mutate(help_1 = hshould[1],
+         help_2 = hshould[2],
+         help_3 = hshould[3],
+         help_4 = hshould[4]) |>
+  ungroup()
+```
+
+
+```{r}
+write_csv(tracking_help_gaps, "tracking_help_gaps.csv")
+```
+
+```{r}
+tracking_help_gaps <- read_csv("tracking_help_gaps.csv")
+```
+
+
+```{r}
+tracking_2wg <- tracking_help_gaps |>
+  group_by(gamePlay, frameId) |>
+  mutate(has_2wg = ifelse(wasPassRusher == 1 & nshould == 1 & gap2 == 0 & (gap3 == 1 | gap4 == 1), 1, 0)) |>
+  mutate(has_2wg = ifelse(wasPassRusher == 1 & nshould == 2 & gap1 == 0 & (gap3 == 1 | gap4 == 1), 1, has_2wg)) |>
+  mutate(has_2wg = ifelse(wasPassRusher == 1 & nshould == 3 & gap4 == 0 & 
+                            ((gap1 == 1 | gap2 == 1) & (gap5 == 1 | gap6 == 1)), 1, has_2wg)) |>
+  mutate(has_2wg = ifelse(wasPassRusher == 1 & nshould == 4 & gap3 == 0 & 
+                            ((gap1 == 1 | gap2 == 1) & (gap5 == 1 | gap6 == 1)), 1, has_2wg)) |>
+  mutate(has_2wg = ifelse(wasPassRusher == 1 & nshould == 5 & gap6 == 0 & 
+                            ((gap3 == 1 | gap4 == 1) & (gap7 == 1 | gap8 == 1)), 1, has_2wg)) |>
+  mutate(has_2wg = ifelse(wasPassRusher == 1 & nshould == 6 & gap5 == 0 & 
+                            ((gap3 == 1 | gap4 == 1) & (gap7 == 1 | gap8 == 1)), 1, has_2wg)) |>
+  mutate(has_2wg = ifelse(wasPassRusher == 1 & nshould == 7 & gap8 == 0 & 
+                            ((gap5 == 1 | gap6 == 1) & (gap9 == 1 | gap10 == 1)), 1, has_2wg)) |>
+  mutate(has_2wg = ifelse(wasPassRusher == 1 & nshould == 8 & gap7 == 0 & 
+                            ((gap5 == 1 | gap6 == 1) & (gap9 == 1 | gap10 == 1)), 1, has_2wg)) |>
+  mutate(has_2wg = ifelse(wasPassRusher == 1 & nshould == 9 & gap10 == 0 & (gap7 == 1 | gap8 == 1), 1, has_2wg)) |>
+  mutate(has_2wg = ifelse(wasPassRusher == 1 & nshould == 10 & gap9 == 0 & (gap7 == 1 | gap8 == 1), 1, has_2wg)) |>
+  mutate(help_1 = ifelse(is.na(help_1), 0, help_1),
+         help_2 = ifelse(is.na(help_2), 0, help_2),
+         help_3 = ifelse(is.na(help_3), 0, help_3),
+         help_4 = ifelse(is.na(help_4), 0, help_4)) |>
+  mutate(has_2wg = ifelse(nshould == help_1, 0, has_2wg)) |>
+  mutate(has_2wg = ifelse(nshould == help_2, 0, has_2wg)) |>
+  mutate(has_2wg = ifelse(nshould == help_3, 0, has_2wg)) |>
+  mutate(has_2wg = ifelse(nshould == help_4, 0, has_2wg)) |>
+  ungroup()
+  
+  
+```
+
+```{r}
+write_csv(tracking_2wg, "tracking_2wg.csv")
+```
+
+```{r}
+tracking_2wg <- read_csv("tracking_2wg.csv")
+```
+
+```{r}
+tracking_2wg <- tracking_2wg |>
+  subset(select = -c(jerseyNumber, dis, o, dir, is_OBT))
+```
+
+```{r}
+players <- read_csv("players.csv")
+```
+```{r}
+get_name <- function(nflId){
+  players[nflId == players$nflId, 7]$displayName[[1]][[1]]
+}
+```
+
+
+```{r}
+twgs <- tracking_2wg |>
+  mutate(has_2wg = ifelse(frameType != "AFTER_SNAP", 0, has_2wg)) |>
+  group_by(gamePlay, nflId) |>
+  mutate(twg_frames = sum(has_2wg)) |>
+  ungroup() |>
+  group_by(gamePlay) |>
+  arrange(desc(twg_frames)) |>
+  mutate(twg_player = ifelse(twg_frames[1] >= 5, nflId[1], NA)) |>
+  summarize(twg_player = twg_player[1]) |>
+  filter(!is.na(twg_player)) |>
+  ungroup() |>
+  group_by(twg_player) |> 
+  mutate(twg = 1) |>
+  summarize(twgs = sum(twg)) |>
+  arrange(desc(twgs)) |>
+  mutate(name = lapply(twg_player, get_name))
+  
+  
+```
+
+```{r}
+tracking_2wg |>
+  mutate(has_2wg = ifelse(frameType != "AFTER_SNAP", 0, has_2wg)) |>
+  group_by(gamePlay, nflId) |>
+  mutate(twg_frames = sum(has_2wg)) |>
+  ungroup() |>
+  group_by(gamePlay) |>
+  arrange(desc(twg_frames)) |>
+  mutate(twg_player = ifelse(twg_frames[1] >= 3, nflId[1], NA)) |>
+  summarize(twg_player = twg_player[1], gameId = gameId[1], playId = playId[1],
+            offTeam = offTeam[1], defTeam = defTeam[1])
+```
+
+
+```{r}
+twg_pbp <- tracking_2wg |>
+  mutate(has_2wg = ifelse(frameType != "AFTER_SNAP", 0, has_2wg)) |>
+  group_by(gamePlay, nflId) |>
+  mutate(twg_frames = sum(has_2wg)) |>
+  ungroup() |>
+  group_by(gamePlay) |>
+  arrange(desc(twg_frames)) |>
+  mutate(twg_player = ifelse(twg_frames[1] >= 3, nflId[1], NA)) |>
+  summarize(twg_player = twg_player[1]) |>
+  ungroup()
+```
+
+
+
+```{r}
+plays <- read_csv("filtered_plays.csv")
+```
+
+```{r}
+plays <- inner_join(plays, twg_pbp, by = "gamePlay")
+```
+
+```{r}
+player_play <- read_csv("filtered_player_play.csv")
+```
+
+```{r}
+get_twg_player <- function(gamePlay){
+  twg_pbp[match(gamePlay, twg_pbp$gamePlay), 2]$twg_player[[1]][1]
+}
+```
+
+
+
+```{r}
+redone_twgs <- player_play |>
+  group_by(gamePlay) |>
+  mutate(twg_player = get_twg_player(gamePlay)) |>
+  mutate(had_twg = ifelse(twg_player == nflId, 1, 0), had_pressure = ifelse(causedPressure, 1, 0)) |>
+  filter(had_twg == 1) |>
+  ungroup() |>
+  group_by(nflId) |>
+  summarize(two_way_gos = sum(had_twg),
+            pressures = sum(had_pressure)) |>
+  arrange(desc(two_way_gos)) |>
+  ungroup() |>
+  mutate(name = lapply(nflId, get_name), pressureRate = pressures/two_way_gos)
+```
+
+
+```{r}
+pressure_rates <- redone_twgs |>
+  filter(two_way_gos > 25) |>
+  arrange(desc(pressureRate))
+```
+
+```{r}
+write_csv(pressure_rates, "pressure_rates.csv")
+```
+

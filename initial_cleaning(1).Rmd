@@ -1,0 +1,238 @@
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(gt)
+library(nflreadr)
+```
+
+```{r}
+onball_threats <- c("DT", "NT", "DE", "ILB", "OLB")
+```
+
+```{r}
+OL <- c("T", "G", "C")
+```
+
+
+```{r}
+dist <- function(x1, x2, y1, y2){
+  sqrt(((x1-x2)^2)+((y1-y2)^2))
+}
+```
+
+
+```{r}
+player_play <- read_csv("player_play.csv")
+plays <- read_csv("plays.csv")
+players <- read_csv("players.csv")
+```
+
+```{r}
+filtered_plays <- plays |>
+  filter(down > 1) |>
+  filter(yardsToGo >= 5) |>
+  filter(dropbackType == "TRADITIONAL"  |
+           dropbackType == "SCRAMBLE" |
+           dropbackType == "SCRAMBLE_ROLLOUT" | 
+           dropbackType == "SCRAMBLE_ROLLOUT_RIGHT" | 
+           dropbackType == "SCRAMBLE_ROLLOUT_LEFT") |>
+  mutate(gamePlay = paste0(gameId, playId))
+```
+
+```{r}
+blitzData <- player_play |>
+  mutate(gamePlay = paste0(gameId, playId)) |>
+  filter(gamePlay %in% filtered_plays$gamePlay) |>
+  mutate(wasInitialPassRusher = ifelse(is.na(wasInitialPassRusher), 0, wasInitialPassRusher)) |>
+  group_by(gamePlay) |>
+  summarize(totalPassrushers = sum(wasInitialPassRusher))
+```
+
+```{r}
+week_1 <- read_csv("tracking_week_1.csv")
+week_2 <- read_csv("tracking_week_2.csv")
+week_3 <- read_csv("tracking_week_3.csv")
+week_4 <- read_csv("tracking_week_4.csv")
+week_5 <- read_csv("tracking_week_5.csv")
+week_6 <- read_csv("tracking_week_6.csv")
+week_7 <- read_csv("tracking_week_7.csv")
+week_8 <- read_csv("tracking_week_8.csv")
+week_9 <- read_csv("tracking_week_9.csv")
+```
+
+```{r}
+week_1 <- week_1 |>
+  mutate(gamePlay = paste0(gameId, playId)) |>
+  filter(gamePlay %in% filtered_plays$gamePlay)
+
+week_2 <- week_2 |>
+  mutate(gamePlay = paste0(gameId, playId)) |>
+  filter(gamePlay %in% filtered_plays$gamePlay)
+
+week_3 <- week_3 |>
+  mutate(gamePlay = paste0(gameId, playId)) |>
+  filter(gamePlay %in% filtered_plays$gamePlay)
+
+week_4 <- week_4 |>
+  mutate(gamePlay = paste0(gameId, playId)) |>
+  filter(gamePlay %in% filtered_plays$gamePlay)
+
+week_5 <- week_5 |>
+  mutate(gamePlay = paste0(gameId, playId)) |>
+  filter(gamePlay %in% filtered_plays$gamePlay)
+
+week_6 <- week_6 |>
+  mutate(gamePlay = paste0(gameId, playId)) |>
+  filter(gamePlay %in% filtered_plays$gamePlay)
+
+week_7 <- week_7 |>
+  mutate(gamePlay = paste0(gameId, playId)) |>
+  filter(gamePlay %in% filtered_plays$gamePlay)
+
+week_8 <- week_8 |>
+  mutate(gamePlay = paste0(gameId, playId)) |>
+  filter(gamePlay %in% filtered_plays$gamePlay)
+
+week_9 <- week_9 |>
+  mutate(gamePlay = paste0(gameId, playId)) |>
+  filter(gamePlay %in% filtered_plays$gamePlay)
+```
+
+```{r}
+master_tracking <- rbind(week_1, week_2)
+master_tracking <- rbind(master_tracking, week_3)
+master_tracking <- rbind(master_tracking, week_4)
+master_tracking <- rbind(master_tracking, week_5)
+master_tracking <- rbind(master_tracking, week_6)
+master_tracking <- rbind(master_tracking, week_7)
+master_tracking <- rbind(master_tracking, week_8)
+master_tracking <- rbind(master_tracking, week_9)
+```
+
+```{r}
+master_tracking_reoriented <- master_tracking |>
+  mutate(x = ifelse(playDirection == "left", abs(120-x), x),
+         y = ifelse(playDirection == "left", abs(53.3-y), y),
+         o = ifelse(playDirection == "left", abs(180 + o), o),
+         dir = ifelse(playDirection == "left", abs(180 + dir), dir))
+```
+
+```{r}
+player_play_filtered <- player_play |>
+  mutate(gamePlay = paste0(gameId, playId)) |>
+  filter(gamePlay %in% filtered_plays$gamePlay)
+```
+
+
+```{r}
+player_play_filtered[player_play_filtered$gamePlay == 2022090800167 &
+               player_play_filtered$nflId == 35472,
+               4]$teamAbbr[1]
+```
+
+```{r}
+get_passrusher <- function(gamePlay, nflId){
+  player_play_filtered[player_play_filtered$gamePlay == gamePlay & 
+                                                player_play_filtered$nflId == nflId,
+                                              34]$wasInitialPassRusher[[1]]
+}
+
+get_position <- function(nflId){
+  players[players$nflId == nflId, 6]$position[[1]]
+}
+
+get_offense <- function(gamePlay){
+  filtered_plays[filtered_plays$gamePlay == gamePlay, 7]$possessionTeam[[1]]
+}
+
+get_defense <- function(gamePlay){
+  unlist(filtered_plays[filtered_plays$gamePlay == gamePlay, 8]$defensiveTeam)[[1]]
+}
+
+get_blitzers <- function(gamePlay){
+  blitzData[match(gamePlay, blitzData$gamePlay), 2]$totalPassrushers[1]
+}
+```
+
+
+
+```{r}
+master_tracking_simsadded <- master_tracking_reoriented |>
+  group_by(gamePlay) |>
+  mutate(ballspot_x = ifelse(club == "football" & frameType == "SNAP", x, NA),
+         ballspot_y = ifelse(club == "football" & frameType == "SNAP", y, NA)) |>
+  arrange(ballspot_x) |>
+  fill(ballspot_x, .direction = "down") |>
+  fill(ballspot_y, .direction = "down") |> 
+  mutate(numberofRushers = get_blitzers(gamePlay)) |>
+  mutate(offTeam = lapply(gamePlay, get_offense),
+         defTeam = lapply(gamePlay, get_defense)) |>
+  mutate(offTeam = lapply(offTeam, extract),
+         defTeam = lapply(defTeam, extract)) |>
+  
+  ungroup() |>
+  group_by(gamePlay, nflId) |>
+  mutate(dist_to_LOS = abs(ballspot_x - x), dist_to_ball_y = abs(ballspot_y - y)) |>
+  mutate(is_OBT = ifelse(club == defTeam & 
+                           dist_to_LOS < 2 & 
+                           dist_to_ball_y < 6.5 & 
+                           frameType == "BEFORE_SNAP", 1, NA)) |>
+  mutate(wasPassRusher = get_passrusher(gamePlay, nflId)) |>
+  group_by(gamePlay, nflId) |>
+  arrange(is_OBT, .by_group = TRUE) |>
+  fill(is_OBT, .direction = "down")
+```
+
+```{r}
+master_tracking_simsadded <- master_tracking_simsadded |>
+  mutate(snap_frame = ifelse(frameType == "SNAP", frameId, NA))|>
+  group_by(gamePlay) |>
+  arrange(snap_frame) |>
+  fill(snap_frame, .direction = "down") |>
+  ungroup() |>
+  mutate(test_frame = ifelse(snap_frame == 1, 1, snap_frame - 1)) |>
+  mutate(position = lapply(nflId, get_position))
+```
+
+
+```{r}
+master_tracking_centers <- master_tracking_simsadded |>
+  mutate(pyth_dist_to_ball = ifelse(frameId == test_frame,
+                                    dist(x, ballspot_x, y, ballspot_y), NA)) |>
+  mutate(pyth_dist_to_ball = ifelse(!(position %in% OL), 150, pyth_dist_to_ball)) |>
+  group_by(gamePlay, nflId) |>
+  arrange(pyth_dist_to_ball) |>
+  fill(pyth_dist_to_ball, .direction = "down") |>
+  ungroup() |>
+  group_by(gamePlay) |>
+  mutate(closest_to_ball = min(pyth_dist_to_ball),
+         is_center = ifelse(pyth_dist_to_ball == closest_to_ball, 1, 0))
+  
+```
+
+```{r}
+trial <- master_tracking_centers |>
+  filter(frameType == "SNAP", gamePlay == 20220929003801, position %in% OL)
+```
+
+```{r}
+master_tracking_operational <- master_tracking_centers |>
+  ungroup() |>
+  group_by(gamePlay, nflId) |>
+  mutate(position = position[[1]][[1]],
+         offTeam = offTeam[[1]][[1]],
+         defTeam = defTeam[[1]][[1]]) |>
+  ungroup()
+```
+
+```{r}
+write.csv(master_tracking_operational, "filtered_tracking.csv")
+write.csv(filtered_plays, "filtered_plays.csv")
+```
+
+```{r}
+write.csv(player_play_filtered, "filtered_player_play.csv")
+```
+
+
+
