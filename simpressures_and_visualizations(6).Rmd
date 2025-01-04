@@ -1,0 +1,279 @@
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(nflreadr)
+library(nflfastR)
+library(gt)
+library(gtExtras)
+library(nflplotR)
+library(gridExtra)
+library(ggrepel)
+```
+
+
+```{r}
+tracking <- read_csv("filtered_tracking.csv")
+plays <- read_csv("filtered_plays.csv")
+pressure_rates <- read_csv("pressure_rates.csv")
+players <- read_csv("players.csv")
+```
+
+```{r}
+player_play <- read_csv("filtered_player_play.csv")
+```
+```{r}
+get_defTeam <- function(gamePlay){
+  plays[match(gamePlay, plays$gamePlay), 9]$defensiveTeam[[1]][1]
+}
+```
+
+
+```{r}
+logo_data <- teams_colors_logos |>
+  rename("team" = team_abbr)
+```
+
+```{r}
+players <- players |>
+  filter(nflId %in% pressure_rates$nflId)
+```
+
+```{r}
+playerData <- inner_join(players, pressure_rates, by = c("nflId")) |>
+  subset(select = c(nflId, displayName, two_way_gos, pressures, pressureRate)) |>
+  rename("name" = displayName)
+```
+
+```{r}
+team_data <- tracking |>
+  filter(nflId %in% pressure_rates$nflId) |>
+  group_by(nflId) |> 
+  slice(1) |>
+  ungroup() |>
+  subset(select = c(nflId, club)) |>
+  rename("team" = club)
+```
+
+```{r}
+playerData = inner_join(playerData, team_data, by = c("nflId"))
+```
+
+
+```{r}
+playerData_vis <- inner_join(playerData, logo_data, by = ("team"))
+  
+```
+
+```{r}
+playerData_vis |>
+  filter(two_way_gos >= 30) |>
+  subset(select = c(name, pressureRate, team_logo_espn)) |>
+  arrange(desc(pressureRate)) |>
+  slice(1:10)|>
+  gt() |>
+  tab_header(title = md("**Top 10 Performers on 2-Way-Gos**"),
+             subtitle = "Weeks 1-9, 2022 NFL Season") |>
+  tab_footnote(footnote = "Minimum 30 reps", locations = cells_title(c("title"))) |>
+  gt_color_rows(columns = c(pressureRate), palette = c("red", "springgreen3"), 
+                domain = playerData_vis$pressureRate) |>
+  cols_move_to_end(c(team_logo_espn)) |>
+  cols_move_to_end(c(pressureRate)) |>
+  cols_align(align = c("center"), columns = everything()) |>
+  cols_width(team_logo_espn~px(100)) |>
+  cols_label(name = "Player", team_logo_espn = "Team", pressureRate = "Isolation Win Rate") |>
+  fmt_image(columns = c(team_logo_espn)) |>
+  fmt_number(columns = c(pressureRate), decimals = 3)
+  
+  
+```
+
+
+```{r}
+chaos_rates <- tracking |>
+  group_by(gamePlay) |>
+  subset(select = c(club, gameId, playId, nflId, gamePlay, displayName, x, y, frameType,
+                    numberofRushers, is_OBT, wasPassRusher, position, dist_to_LOS, dist_to_ball_y,
+                    offTeam, defTeam)) |>
+  filter(frameType == "SNAP") |>
+  mutate(is_OBT = ifelse(club == defTeam & 
+                           dist_to_LOS < 2.6 & 
+                           dist_to_ball_y < 7.5, 1, 0),
+         wasPassRusher = ifelse(is.na(wasPassRusher), 0, wasPassRusher)) |>
+  ungroup() |>
+  group_by(gamePlay) |>
+  summarize(team = defTeam[1], gameId = gameId[1],
+            playId = playId[1],
+            OBTs = sum(is_OBT), passRushers = sum(wasPassRusher)) |>
+  group_by(team) |>
+  mutate(is_disguised_pressure = ifelse(OBTs != passRushers, 1, 0)) |>
+  summarize(disguise_reps = sum(is_disguised_pressure), total_reps = n()) |>
+  mutate(chaos_rate = disguise_reps/total_reps) |>
+  arrange(desc(chaos_rate))
+
+```
+
+
+```{r}
+chaos_rates_vis <- inner_join(chaos_rates, logo_data, by = "team")
+```
+
+
+```{r}
+get_team_chaos_rate <- function(team){
+  chaos_rates_vis[chaos_rates_vis$team == team, 4]$chaos_rate[1]
+}
+```
+
+```{r}
+get_team_chaos_rate("KC")
+```
+
+```{r}
+get_team_stunt_rate <- function(team){
+  stunt_data[stunt_data$team == team, 4]$stunt_rate[1]
+}
+```
+
+
+```{r}
+chaos_rates <- c()
+stunt_rates <- c()
+for (i in 1:59){
+  team <- playerData$team[i]
+  cr <- get_team_chaos_rate(team)
+  sr <- get_team_stunt_rate(team)
+  chaos_rates <- append(chaos_rates, cr)
+  stunt_rates <- append(stunt_rates, sr)
+  
+}
+```
+
+```{r}
+teamRates <- playerData_vis
+```
+
+
+
+```{r}
+teamRates$team_chaos_rate <- chaos_rates
+teamRates$team_stunt_rate <- stunt_rates
+```
+
+```{r}
+chaos_rates_vis |>
+  mutate(totalReps = sum(total_reps))
+```
+
+
+```{r}
+team_pressure_rates <- player_play |>
+  mutate(defTeam = lapply(gamePlay, get_defTeam)) |>
+  filter(teamAbbr == defTeam) |>
+  mutate(hadPressure = ifelse(causedPressure, 1, 0)) |>
+  group_by(gamePlay) |>
+  arrange(desc(hadPressure)) |>
+  slice(1) |>
+  ungroup() |>
+  group_by(teamAbbr) |>
+  mutate(rep = 1) |>
+  summarise(pressures = sum(hadPressure), reps = sum(rep)) |>
+  mutate(pressureRate = pressures/reps) |>
+  subset(select = c(teamAbbr, pressureRate)) |>
+  rename("team" = teamAbbr)
+  
+```
+
+
+```{r}
+stunt_data <- stunt_data |>
+  subset(select = c(team, stunt_rate))
+teamData <- inner_join(chaos_rates_vis, stunt_data, by = "team" )
+teamData <- inner_join(teamData, team_pressure_rates, by = "team")
+```
+
+
+```{r}
+cor(teamData$chaos_rate, teamData$stunt_rate)
+```
+
+
+```{r}
+teamData |>
+  ggplot(aes(chaos_rate, stunt_rate))+
+  geom_nfl_logos(aes(team_abbr = team), width = 0.045)+
+  labs(title = "Team Stunt Rate vs. Team Disguise Rate",
+       x = "Team Disguise Rate", y = "Team Stunt Rate", 
+       caption = "R = -0.18")+
+  theme_bw()
+```
+
+```{r}
+cor(teamData$chaos_rate, teamData$pressureRate)
+```
+
+
+```{r}
+teamData |>
+  ggplot(aes(chaos_rate, pressureRate))+
+  geom_nfl_logos(aes(team_abbr = team), width = 0.045)+
+  labs(title = "Team Pressure Rate vs. Team Disguise Rate",
+       x = "Team Disguise Rate", y = "Team Pressure Rate",
+       caption = "R = 0.08")+
+  theme_bw()
+```
+
+```{r}
+cor(teamData$stunt_rate, teamData$pressureRate)
+```
+
+
+```{r}
+teamData |>
+  ggplot(aes(stunt_rate, pressureRate))+
+  geom_nfl_logos(aes(team_abbr = team), width = 0.045)+
+  labs(title = "Team Pressure Rate vs. Team Stunt Rate",
+       x = "Team Stunt Rate", y = "Team Pressure Rate",
+       caption = "R = 0.48")+
+  theme_bw()
+```
+```{r}
+summary(lm(pressureRate~stunt_rate, data = teamData))
+```
+```{r}
+cor(teamRates$pressureRate, teamRates$team_stunt_rate)
+```
+
+
+```{r}
+teamRates |>
+  ggplot(aes(team_stunt_rate, pressureRate, label = name))+
+  geom_point(data = teamRates, color = teamRates$team_color, alpha = 0.6)+
+  #geom_nfl_logos(aes(team_abbr = team), width = 0.03)+
+  geom_text(size = 2.5, vjust = -1.1, hjust = 0.57)+
+  labs(title = "Player Isolation Win Rate vs. Team Stunt Rate",
+       x = "Team Stunt Rate", y = "Isolation Win Rate",
+       caption = "R = 0.20")+
+  theme_bw()
+  
+```
+
+```{r}
+cor(teamRates$pressureRate, teamRates$team_chaos_rate)
+```
+
+
+```{r}
+teamRates |>
+  ggplot(aes(team_chaos_rate, pressureRate, label = name))+
+  geom_point(data = teamRates, color = teamRates$team_color, alpha = 0.6)+
+  #geom_nfl_logos(aes(team_abbr = team), width = 0.03)+
+  geom_text(size = 2.5, vjust = -1.1, hjust = 0.45)+
+  labs(title = "Player Isolation Win Rate vs. Team Disguise Rate",
+       x = "Team Disguise Rate", y = "Isolation Win Rate",
+       caption = "R = 0.11")+
+  theme_bw()
+```
+
+
+
+
